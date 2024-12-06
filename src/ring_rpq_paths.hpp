@@ -343,7 +343,8 @@ private:
                              Container &ist_container,
                              std::vector<id_state_label_type> &path,
                              uint64_t &start_path,
-                             std::vector<edge_type> &adj_lists){
+                             std::vector<uint64_t> &states,
+                             std::vector<std::vector<edge_type>> &adj_lists){
 
         //PART1: Finding predicates from the object whose range in L_p is I_p
         std::vector<std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> pred_vec;
@@ -367,7 +368,7 @@ private:
             //PART3: Map the range of each subject to the range of objects
             for (const auto &s : subj_vec) {
                 id_state = encode(s, new_D);
-                vs = check_visited_node(id_state);
+                vs = check_visited_node(id_state, map_id);
                 if(!vs) { //not visited node
                     add_visited_node(id_state, map_id);
                     path.emplace_back(id_state_label_type{id_state, static_cast<uint32_t>(pred_vec[i].first)});
@@ -375,7 +376,7 @@ private:
                         //building path in PMR
                         uint64_t tgt, src;
                         for(uint64_t pi = start_path; pi < path.size(); ++pi) {
-                            tgt = add_PMR_node(path[pi], map_id);
+                            tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
                             if(pi > start_path) add_adj_list(src, tgt, path[pi], adj_lists);
                             src = tgt;
                         }
@@ -387,7 +388,7 @@ private:
                     uint64_t src = map_id[path[start_path-1].id_state]; //prev materialized node
                     uint64_t tgt;
                     for(uint64_t pi = start_path; pi < path.size(); ++pi) {
-                        tgt = add_PMR_node(path[pi], map_id);
+                        tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
                         add_adj_list(src, tgt, path[pi], adj_lists);
                         src = tgt;
                     }
@@ -441,7 +442,7 @@ private:
 
     uint64_t add_PMR_node(uint64_t id_state, std::unordered_map<uint64_t, uint64_t> &map_id,
                       std::vector<uint64_t> &states,
-                      std::vector<std::vector<std::pair<uint64_t, uint32_t>>> &adj_lists) {
+                      std::vector<std::vector<edge_type>> &adj_lists) {
         auto it = map_id.find(id_state);
         adj_lists.emplace_back();
         it->second = adj_lists.size();
@@ -457,10 +458,10 @@ private:
 
 
     bool path_const_s_to_var_o(RpqAutomata &A,
-                               std::unordered_map<uint64_t, uint64_t> &map_id,
                                std::vector<word_t> &B_array,
                                uint64_t initial_object,
                                std::vector<std::vector<edge_type>> &adj_lists,
+                               std::vector<uint64_t> &states,
                                bool const_to_var,
                                high_resolution_clock::time_point start) {
 
@@ -476,6 +477,7 @@ private:
 
         //TODO: container agora ten que conter intervalo + currentD (e o mesmo) necesitarei saber o object?
         Container ist_container; //contains intervals with NFA states
+        std::unordered_map<uint64_t, uint64_t> map_id;
         current_D = (word_t) A.getFinalStates();
         ist_container.push(interval_state_type{bwt_interval(L_P.get_C(initial_object),
                                                             L_P.get_C(initial_object + 1) - 1), current_D, 0});
@@ -483,7 +485,7 @@ private:
         auto id_state = encode(initial_object, current_D);
         if (A.atFinal(current_D, BWD)) {
             add_visited_node(id_state, map_id);
-            add_PMR_node(id_state, map_id, adj_lists);
+            add_PMR_node(id_state, map_id, states, adj_lists);
         }
         std::vector<id_state_label_type> path;
         path.emplace_back(id_state_label_type{id_state, 0});
@@ -494,7 +496,7 @@ private:
             if(ist_top.level < start_path) start_path = ist_top.level;
             if(ist_top.level < prev_level) path.pop_back();
             next_step_const_to_var(A, B_array,ist_top.current_D, ist_top.level,
-                ist_top.interval, map_id, ist_container, path, start_path, adj_lists);
+                ist_top.interval, map_id, ist_container, path, start_path, states, adj_lists);
             prev_level = ist_top.level;
             stop = high_resolution_clock::now();
             time_span = duration_cast<microseconds>(stop - start);
@@ -517,8 +519,8 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
                               unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
                               std::vector<word_t> &B_array,
                               uint64_t initial_object,
-                              std::vector<std::pair<uint64_t, uint64_t>> &output_subjects,
-                              uint64_t n_predicates, bool is_negated_pred, uint64_t n_operators, bool is_a_path) {
+                              std::vector<std::vector<edge_type>> &adj_lists,
+                              std::vector<uint64_t> &states) {
 
         std::string query, str_aux;
 
@@ -567,8 +569,8 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
         duration<double> time_span;
         start = high_resolution_clock::now();
 
-        path_const_s_to_var_o(A, predicates_map, B_array, initial_object,
-            output_subjects, true, start);
+        path_const_s_to_var_o(A, B_array, initial_object,
+            adj_lists, states, true, start);
 
         for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
             L_P.unmark<word_t>(it->first, B_array);
