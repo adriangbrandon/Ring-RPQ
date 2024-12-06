@@ -63,6 +63,10 @@ public:
     return *(_nfaData->final);
   }
 
+  inline int getNumberStates() {
+    return _nfaData->m;
+  }
+
 private:
   bool _isValid;
   regularData *_nfaData;
