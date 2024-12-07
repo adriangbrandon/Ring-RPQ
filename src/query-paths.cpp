@@ -219,7 +219,7 @@ int main(int argc, char **argv) {
                     if (flag_s) {
                         graph.rpq_path_const_s_to_var_o(query, pred_map, B_array, s_id, adj_lists, states);
                     } else {
-                        std::cout << "Not supported yet." << std::endl;
+                        graph.rpq_path_var_s_to_const_o(query, pred_map, B_array, o_id, adj_lists, states);
                     }
                 }
                 stop = high_resolution_clock::now();
@@ -233,6 +233,8 @@ int main(int argc, char **argv) {
                 }
 
                 cout << q << ";" << PMR_edges << ";" << PMR_nodes << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+
+                graph.print_PMR(adj_lists, states);
 
             } else skip_flag = false;
         } else {

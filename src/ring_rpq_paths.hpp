@@ -48,6 +48,8 @@ typedef struct {
     bwt_interval interval;
     word_t current_D;
     uint level;
+    uint node;
+    uint label;
 } interval_state_type;
 
 typedef struct {
@@ -336,15 +338,9 @@ private:
 
 
 
-    //TODO pasar o map_id e adj_lists (penso que tamen o camiño que fun facendo)
-    void  next_step_const_to_var(RpqAutomata &A, std::vector<word_t> &B_array,
+    void next_step_const_to_var(RpqAutomata &A, std::vector<word_t> &B_array,
                              word_t current_D, uint level, bwt_interval &I_p,
-                             std::unordered_map<uint64_t, uint64_t> &map_id,
-                             Container &ist_container,
-                             std::vector<id_state_label_type> &path,
-                             uint64_t &start_path,
-                             std::vector<uint64_t> &states,
-                             std::vector<std::vector<edge_type>> &adj_lists){
+                             Container &ist_container){
 
         //PART1: Finding predicates from the object whose range in L_p is I_p
         std::vector<std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> pred_vec;
@@ -352,8 +348,7 @@ private:
                                                       current_D, pred_vec);
 
         std::pair<uint64_t, uint64_t> interval;
-        uint64_t c, id_state;
-        int vs; //visited state
+        uint64_t c;
         word_t new_D;
         //PART2: For each predicate, the values in L_S are obtained by using a backward step
         for (uint64_t i = 0; i < pred_vec.size(); i++) {
@@ -367,35 +362,10 @@ private:
 
             //PART3: Map the range of each subject to the range of objects
             for (const auto &s : subj_vec) {
-                id_state = encode(s, new_D);
-                vs = check_visited_node(id_state, map_id);
-                if(!vs) { //not visited node
-                    add_visited_node(id_state, map_id);
-                    path.emplace_back(id_state_label_type{id_state, static_cast<uint32_t>(pred_vec[i].first)});
-                    if (A.atFinal(new_D, BWD)) {
-                        //building path in PMR
-                        uint64_t tgt, src;
-                        for(uint64_t pi = start_path; pi < path.size(); ++pi) {
-                            tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
-                            if(pi > start_path) add_adj_list(src, tgt, path[pi], adj_lists);
-                            src = tgt;
-                        }
-                        start_path = level;
-                    }
-                    push_merge_interval(ist_container, s, new_D, level+1);
-                }else if (vs == 2) { //visited node and in PMR
-                    //building path in PMR
-                    uint64_t src = map_id[path[start_path-1].id_state]; //prev materialized node
-                    uint64_t tgt;
-                    for(uint64_t pi = start_path; pi < path.size(); ++pi) {
-                        tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
-                        add_adj_list(src, tgt, path[pi], adj_lists);
-                        src = tgt;
-                    }
-                    tgt = map_id[id_state];
-                    add_adj_list(src, tgt, id_state_label_type{id_state, static_cast<uint32_t>(pred_vec[i].first)}, adj_lists);
-                    start_path = level;
-                } //Otherwise: visited node but not in PMR => No solution is reacheable [nothing to do]
+                const auto lb = L_P.get_C(s);
+                const auto rb = L_P.get_C(s + 1) - 1;
+                ist_container.push(interval_state_type{bwt_interval(lb, rb),new_D, level+1,
+                    static_cast<uint32_t>(s), static_cast<uint32_t>(pred_vec[i].first)});
             }
         }
 
@@ -403,13 +373,13 @@ private:
 
 
 
-    void push_merge_interval(Container& ist_container, uint64_t symbol, word_t D, uint level){
+    void push_merge_interval(Container& ist_container, uint32_t node, uint32_t label, word_t D, uint level){
 
-        const auto lb = L_P.get_C(symbol);
-        const auto rb = L_P.get_C(symbol + 1) - 1;
+        const auto lb = L_P.get_C(node);
+        const auto rb = L_P.get_C(node + 1) - 1;
 
         if(ist_container.empty()){
-            ist_container.push(interval_state_type{bwt_interval(lb, rb),D, level});
+            ist_container.push(interval_state_type{bwt_interval(lb, rb),D, level, node, label});
             return;
         }
         //The previous interval is contiguous to element's interval and
@@ -427,6 +397,12 @@ private:
         return ((uint64_t) id << (sizeof(word_t)*8)) | (state & ((0x1 << (sizeof(word_t)*8)) - 1));
     }
 
+    std::pair<uint32_t, word_t> decode(uint64_t id_state) {
+        std::pair<uint32_t, word_t> res;
+        res.first = (uint32_t) (id_state >> (sizeof(word_t)*8));
+        res.second = (word_t) (id_state & ((0x1 << (sizeof(word_t)*8)) - 1));
+        return res;
+    }
 
     uint check_visited_node(uint64_t id_state, std::unordered_map<uint64_t, uint64_t> &map_id) {
         auto it = map_id.find(id_state);
@@ -453,13 +429,60 @@ private:
 
     void add_adj_list(uint64_t src, uint64_t tgt, id_state_label_type isl,
                           std::vector<std::vector<edge_type>> &adj_lists) {
-        adj_lists[src].emplace_back(edge_type{tgt, isl.label});
+        adj_lists[src-1].emplace_back(edge_type{tgt-1, isl.label});
+    }
+
+    bool traverse_node(RpqAutomata &A,
+                             word_t D, uint level, uint32_t s, uint32_t p,
+                             std::unordered_map<uint64_t, uint64_t> &map_id,
+                             std::vector<id_state_label_type> &path,
+                             uint64_t &start_path,
+                             std::vector<uint64_t> &states,
+                             std::vector<std::vector<edge_type>> &adj_lists) {
+        auto id_state = encode(s, D);
+        auto vs = check_visited_node(id_state, map_id);
+        if(!vs) { //not visited node
+            add_visited_node(id_state, map_id);
+            path[level] = id_state_label_type{id_state, p};
+            if (A.atFinal(D, BWD)) {
+                //building path in PMR
+
+                uint64_t tgt, src;
+                if(start_path > 0) {
+                    src =  map_id[path[start_path-1].id_state];
+                }else {
+                    src = add_PMR_node(path[start_path].id_state, map_id, states, adj_lists);
+                    ++start_path;
+                }
+                for(uint64_t pi = start_path; pi <= level; ++pi) {
+                    tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                    add_adj_list(src, tgt, path[pi], adj_lists);
+                    src = tgt;
+                }
+                start_path = level+1;
+            }
+            return true;
+        }
+        if (vs == 2) { //visited node and in PMR
+            //building path in PMR
+            uint64_t src = map_id[path[start_path-1].id_state]; //prev materialized node
+            uint64_t tgt;
+            for(uint64_t pi = start_path; pi < level; ++pi) {
+                tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                add_adj_list(src, tgt, path[pi], adj_lists);
+                src = tgt;
+            }
+            tgt = map_id[id_state];
+            add_adj_list(src, tgt, id_state_label_type{id_state, p}, adj_lists);
+            start_path = level+1;
+        } //Otherwise: visited node but not in PMR => No solution is reacheable [nothing to do]*/
+        return false;
     }
 
 
     bool path_const_s_to_var_o(RpqAutomata &A,
                                std::vector<word_t> &B_array,
-                               uint64_t initial_object,
+                               uint32_t initial_object,
                                std::vector<std::vector<edge_type>> &adj_lists,
                                std::vector<uint64_t> &states,
                                bool const_to_var,
@@ -480,24 +503,27 @@ private:
         std::unordered_map<uint64_t, uint64_t> map_id;
         current_D = (word_t) A.getFinalStates();
         ist_container.push(interval_state_type{bwt_interval(L_P.get_C(initial_object),
-                                                            L_P.get_C(initial_object + 1) - 1), current_D, 0});
+                                                            L_P.get_C(initial_object + 1) - 1), current_D, 0,
+                                                                initial_object, 0});
 
-        auto id_state = encode(initial_object, current_D);
+        /*auto id_state = encode(initial_object, current_D);
+        add_visited_node(id_state, map_id);
         if (A.atFinal(current_D, BWD)) {
-            add_visited_node(id_state, map_id);
             add_PMR_node(id_state, map_id, states, adj_lists);
-        }
-        std::vector<id_state_label_type> path;
-        path.emplace_back(id_state_label_type{id_state, 0});
-        uint64_t start_path = 0, prev_level = 0;
+        }*/
+        std::vector<id_state_label_type> path(256);
+        //path.emplace_back(id_state_label_type{id_state, 0});
+        uint64_t start_path = 0;
         while (!ist_container.empty()) {
             auto ist_top = first_element(ist_container);
             ist_container.pop();
+            if(ist_top.level+1 == path.size()) path.resize(2*path.size());
             if(ist_top.level < start_path) start_path = ist_top.level;
-            if(ist_top.level < prev_level) path.pop_back();
-            next_step_const_to_var(A, B_array,ist_top.current_D, ist_top.level,
-                ist_top.interval, map_id, ist_container, path, start_path, states, adj_lists);
-            prev_level = ist_top.level;
+            if(traverse_node(A, ist_top.current_D, ist_top.level, ist_top.node, ist_top.label,
+                map_id, path, start_path, states, adj_lists)) {
+                next_step_const_to_var(A, B_array,ist_top.current_D, ist_top.level, ist_top.interval, ist_container);
+            }
+
             stop = high_resolution_clock::now();
             time_span = duration_cast<microseconds>(stop - start);
             total_time = time_span.count();
@@ -513,7 +539,33 @@ private:
 
 public:
 
+    void print_PMR(std::vector<std::vector<edge_type>> &adj_lists,
+                   std::vector<uint64_t> &states) {
 
+        for(auto i = 0; i < adj_lists.size(); ++i) {
+            auto p = decode(states[i]);
+            std::cout << "Id: " << i << " node=" << p.first << " DFA-state=" << p.second << std::endl;
+            std::cout << "List: [ ";
+            for(const auto &e : adj_lists[i]) {
+                std::cout << "{" << e.tgt << ", " << e.label << "} ";
+            }
+            std::cout << "]" << std::endl;
+            std::cout << std::endl;
+        }
+    }
+
+    /*void compress_PMR(std::vector<std::vector<edge_type>> &adj_lists,
+                      std::vector<uint64_t> &states) {
+        std::vector<uint32_t> tunnel;
+        std::stack<uint32_t> stack_nodes;
+        stack_nodes.emplace(0);
+        uint32_t n;
+        while(!stack_nodes.empty()) {
+            n = stack_nodes.top();
+            stack_nodes.pop();
+
+        }
+    }*/
 
 void rpq_path_const_s_to_var_o(const std::string &rpq,
                               unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
@@ -523,32 +575,6 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
                               std::vector<uint64_t> &states) {
 
         std::string query, str_aux;
-
-
-        /*
-         TODO penso que esta é igual (se soamente hai un predicado significa que o resultado da RPQ e o path son equivalentes)
-         de todas formas mirar máis adiante porque teño que construir a PMR. Por agora comento isto:
-         */
-
-        /*if (n_predicates == 1 and n_operators == 0) {
-            uint64_t predicate;
-            if (is_negated_pred)
-                predicate = real_max_P + predicates_map["<" + rpq.substr(2, rpq.size() - 1)];
-            else
-                predicate = predicates_map[rpq];
-
-            // cuidado, lo anterior asume que los negados han sido manipulados desde afuera, lo cual es cierto en la manera que los estoy escribiendo en el log que manejo, pero hay que hacerlo de una forma mas general.
-            high_resolution_clock::time_point start = high_resolution_clock::now();
-            single_predicate_query(predicate, initial_object, CONST_TO_VAR, is_negated_pred,
-                                   output_subjects, start);
-            return;
-        } else {
-            if (is_a_path and n_operators == 1) {
-                high_resolution_clock::time_point start = high_resolution_clock::now();
-                path_query(rpq, initial_object, CONST_TO_VAR, predicates_map, output_subjects, start);
-                return;
-            }
-        }*/
 
         int64_t iii = rpq.size() - 1;
         query = parse_reverse(rpq, iii, predicates_map, real_max_P);
@@ -577,6 +603,40 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
         }
     };
 
+    void rpq_path_var_s_to_const_o(const std::string &rpq,
+                              unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
+                              std::vector<word_t> &B_array,
+                              uint64_t initial_object,
+                              std::vector<std::vector<edge_type>> &adj_lists,
+                              std::vector<uint64_t> &states) {
+
+        std::string query, str_aux;
+        int64_t iii = 0;
+        query = parse(rpq, iii, predicates_map, real_max_P);
+
+        RpqAutomata A(query, predicates_map);
+        if(A.getNumberStates() >= 16) {
+            std::cout << "Error: more than 16 NFA states." << std::endl;
+            return;
+        }
+
+        std::unordered_map<uint64_t, uint64_t> m = A.getB();
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.mark<word_t>(it->first, B_array, (word_t) it->second);
+        }
+
+        high_resolution_clock::time_point start;
+        double total_time = 0.0;
+        duration<double> time_span;
+        start = high_resolution_clock::now();
+
+        path_const_s_to_var_o(A, B_array, initial_object,
+            adj_lists, states, false, start);
+
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.unmark<word_t>(it->first, B_array);
+        }
+    };
 
 
 
