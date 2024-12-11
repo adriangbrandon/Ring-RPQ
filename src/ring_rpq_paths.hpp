@@ -63,6 +63,16 @@ typedef struct {
 } id_state_label_type;
 
 typedef struct {
+    uint64_t id_state; //id+state
+    uint64_t out_degree = 0;
+} id_state_degree_type;
+
+typedef struct {
+    uint64_t node_pmr; //node in pmr
+    uint64_t out_degree;
+} info_type;
+
+typedef struct {
     uint64_t element;
     std::vector<std::pair<uint64_t, uint64_t>> solutions;
 } element_solution_type;
@@ -338,10 +348,11 @@ private:
 
 
 
-    void next_step_const_to_var(RpqAutomata &A, std::vector<word_t> &B_array,
+    uint64_t next_step_const_to_var(RpqAutomata &A, std::vector<word_t> &B_array,
                              word_t current_D, uint level, bwt_interval &I_p,
                              Container &ist_container){
 
+        uint64_t out_degree = 0; //number of nodes in the product graph pointed out by the current node
         //PART1: Finding predicates from the object whose range in L_p is I_p
         std::vector<std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> pred_vec;
         L_P.all_active_p_values_in_range_test<word_t>(I_p.left(), I_p.right(), B_array,
@@ -366,8 +377,10 @@ private:
                 const auto rb = L_P.get_C(s + 1) - 1;
                 ist_container.push(interval_state_type{bwt_interval(lb, rb),new_D, level+1,
                     static_cast<uint32_t>(s), static_cast<uint32_t>(pred_vec[i].first)});
+                ++out_degree;
             }
         }
+        return out_degree;
 
     }
 
@@ -404,26 +417,35 @@ private:
         return res;
     }
 
-    uint check_visited_node(uint64_t id_state, std::unordered_map<uint64_t, uint64_t> &map_id) {
+    uint check_visited_node(uint64_t id_state, std::unordered_map<uint64_t, info_type> &map_id) {
         auto it = map_id.find(id_state);
         if(it == map_id.end()) {
             return 0;  //not visited
         }
-        return 1 + (it->second > 0); //1 => visited but not in the PMR; 2 => visited and in the PMR
+        return 1 + (it->second.node_pmr > 0); //1 => visited but not in the PMR; 2 => visited and in the PMR
     }
 
-    void add_visited_node(uint64_t id_state, std::unordered_map<uint64_t, uint64_t> &map_id) {
-        map_id.insert({id_state, 0});
+    void add_visited_node(uint64_t id_state, std::unordered_map<uint64_t, info_type> &map_id) {
+        info_type info{0, 0};
+        map_id.insert({id_state, info});
     }
 
-    uint64_t add_PMR_node(uint64_t id_state, std::unordered_map<uint64_t, uint64_t> &map_id,
-                      std::vector<uint64_t> &states,
+    uint64_t add_PMR_node(uint64_t id_state, std::unordered_map<uint64_t, info_type> &map_id,
+                      std::vector<id_state_degree_type> &states,
                       std::vector<std::vector<edge_type>> &adj_lists) {
         auto it = map_id.find(id_state);
         adj_lists.emplace_back();
-        it->second = adj_lists.size();
-        states.push_back(id_state);
-        return it->second;
+        it->second.node_pmr = adj_lists.size();
+        id_state_degree_type isd;
+        isd.id_state = id_state;
+        isd.out_degree = it->second.out_degree;
+        states.emplace_back(isd);
+        return it->second.node_pmr;
+    }
+
+    void set_degree_node(uint64_t id_state, uint64_t out_degree, std::unordered_map<uint64_t, info_type> &map_id) {
+        auto it = map_id.find(id_state);
+        it->second.out_degree = out_degree;
     }
 
 
@@ -434,10 +456,10 @@ private:
 
     bool traverse_node(RpqAutomata &A,
                              word_t D, uint level, uint32_t s, uint32_t p,
-                             std::unordered_map<uint64_t, uint64_t> &map_id,
+                             std::unordered_map<uint64_t, info_type> &map_id,
                              std::vector<id_state_label_type> &path,
                              uint64_t &start_path,
-                             std::vector<uint64_t> &states,
+                             std::vector<id_state_degree_type> &states,
                              std::vector<std::vector<edge_type>> &adj_lists) {
         auto id_state = encode(s, D);
         auto vs = check_visited_node(id_state, map_id);
@@ -449,7 +471,7 @@ private:
 
                 uint64_t tgt, src;
                 if(start_path > 0) {
-                    src =  map_id[path[start_path-1].id_state];
+                    src =  map_id[path[start_path-1].id_state].node_pmr;
                 }else {
                     src = add_PMR_node(path[start_path].id_state, map_id, states, adj_lists);
                     ++start_path;
@@ -465,14 +487,14 @@ private:
         }
         if (vs == 2) { //visited node and in PMR
             //building path in PMR
-            uint64_t src = map_id[path[start_path-1].id_state]; //prev materialized node
+            uint64_t src = map_id[path[start_path-1].id_state].node_pmr; //prev materialized node
             uint64_t tgt;
             for(uint64_t pi = start_path; pi < level; ++pi) {
                 tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
                 add_adj_list(src, tgt, path[pi], adj_lists);
                 src = tgt;
             }
-            tgt = map_id[id_state];
+            tgt = map_id[id_state].node_pmr;
             add_adj_list(src, tgt, id_state_label_type{id_state, p}, adj_lists);
             start_path = level+1;
         } //Otherwise: visited node but not in PMR => No solution is reacheable [nothing to do]*/
@@ -484,7 +506,7 @@ private:
                                std::vector<word_t> &B_array,
                                uint32_t initial_object,
                                std::vector<std::vector<edge_type>> &adj_lists,
-                               std::vector<uint64_t> &states,
+                               std::vector<id_state_degree_type> &states,
                                bool const_to_var,
                                high_resolution_clock::time_point start) {
 
@@ -500,7 +522,7 @@ private:
 
         //TODO: container agora ten que conter intervalo + currentD (e o mesmo) necesitarei saber o object?
         Container ist_container; //contains intervals with NFA states
-        std::unordered_map<uint64_t, uint64_t> map_id;
+        std::unordered_map<uint64_t, info_type> map_id;
         current_D = (word_t) A.getFinalStates();
         ist_container.push(interval_state_type{bwt_interval(L_P.get_C(initial_object),
                                                             L_P.get_C(initial_object + 1) - 1), current_D, 0,
@@ -521,7 +543,8 @@ private:
             if(ist_top.level < start_path) start_path = ist_top.level;
             if(traverse_node(A, ist_top.current_D, ist_top.level, ist_top.node, ist_top.label,
                 map_id, path, start_path, states, adj_lists)) {
-                next_step_const_to_var(A, B_array,ist_top.current_D, ist_top.level, ist_top.interval, ist_container);
+                auto out_degree = next_step_const_to_var(A, B_array,ist_top.current_D, ist_top.level, ist_top.interval, ist_container);
+                set_degree_node(encode(ist_top.node, ist_top.current_D), out_degree, map_id);
             }
 
             stop = high_resolution_clock::now();
@@ -539,12 +562,22 @@ private:
 
 public:
 
+
+    std::pair<uint64_t, uint64_t> get_nodes_edges(std::vector<std::vector<edge_type>> &adj_lists) {
+        uint64_t PMR_nodes = adj_lists.size();
+        uint64_t PMR_edges = 0;
+        for(const auto &al : adj_lists) {
+            PMR_edges += al.size();
+        }
+        return {PMR_nodes, PMR_edges};
+    }
+
     void print_PMR(std::vector<std::vector<edge_type>> &adj_lists,
-                   std::vector<uint64_t> &states) {
+                   std::vector<id_state_degree_type> &states) {
 
         for(auto i = 0; i < adj_lists.size(); ++i) {
-            auto p = decode(states[i]);
-            std::cout << "Id: " << i << " node=" << p.first << " DFA-state=" << p.second << std::endl;
+            auto p = decode(states[i].id_state);
+            std::cout << "Id: " << i << " node=" << p.first << " DFA-state=" << p.second << " out-degree=" << states[i].out_degree << std::endl;
             std::cout << "List: [ ";
             for(const auto &e : adj_lists[i]) {
                 std::cout << "{" << e.tgt << ", " << e.label << "} ";
@@ -554,25 +587,42 @@ public:
         }
     }
 
-    /*void compress_PMR(std::vector<std::vector<edge_type>> &adj_lists,
-                      std::vector<uint64_t> &states) {
+
+    uint64_t compress_PMR(std::vector<std::vector<edge_type>> &adj_lists,
+                      std::vector<id_state_degree_type> &states) {
         std::vector<uint32_t> tunnel;
         std::stack<uint32_t> stack_nodes;
         stack_nodes.emplace(0);
         uint32_t n;
+        uint64_t nodes_edges_in_tunnels = 0;
+        std::vector<bool> visited(adj_lists.size(), false);
         while(!stack_nodes.empty()) {
             n = stack_nodes.top();
             stack_nodes.pop();
-
+            //check if we can add it to a tunnel
+            if(states[n].out_degree == 1) {
+                tunnel.push_back(n);
+            }else {
+                if(tunnel.size() > 2) { //we can compress it
+                    nodes_edges_in_tunnels += tunnel.size()-1;
+                }
+                tunnel.clear();
+            }
+            //visit
+            visited[n] = true;
+            for(const auto &m : adj_lists[n]) {
+                if(!visited[m.tgt]) stack_nodes.emplace(m.tgt);
+            }
         }
-    }*/
+        return nodes_edges_in_tunnels;
+    }
 
 void rpq_path_const_s_to_var_o(const std::string &rpq,
                               unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
                               std::vector<word_t> &B_array,
                               uint64_t initial_object,
                               std::vector<std::vector<edge_type>> &adj_lists,
-                              std::vector<uint64_t> &states) {
+                              std::vector<id_state_degree_type> &states) {
 
         std::string query, str_aux;
 
@@ -608,7 +658,7 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
                               std::vector<word_t> &B_array,
                               uint64_t initial_object,
                               std::vector<std::vector<edge_type>> &adj_lists,
-                              std::vector<uint64_t> &states) {
+                              std::vector<id_state_degree_type> &states) {
 
         std::string query, str_aux;
         int64_t iii = 0;

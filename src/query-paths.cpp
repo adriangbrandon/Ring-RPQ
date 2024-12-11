@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
     uint64_t s_id, o_id, n_line = 0, q = 0;
     bool flag_s, flag_o, skip_flag;
     std::vector<std::vector<edge_type>> adj_lists;
-    std::vector<uint64_t> states;
+    std::vector<id_state_degree_type> states;
     std::vector<word_t> B_array(4 * graph.n_labels(), 0);
 
     high_resolution_clock::time_point start, stop;
@@ -226,13 +226,11 @@ int main(int argc, char **argv) {
                 time_span = duration_cast<microseconds>(stop - start);
                 total_time = time_span.count();
 
-                uint64_t PMR_nodes = adj_lists.size();
-                uint64_t PMR_edges = 0;
-                for(const auto &al : adj_lists) {
-                    PMR_edges += al.size();
-                }
+                auto PMR_info = graph.get_nodes_edges(adj_lists);
+                std::cout << "info" << std::endl;
+                auto ne_in_tunnels = graph.compress_PMR(adj_lists, states);
 
-                cout << q << ";" << PMR_edges << ";" << PMR_nodes << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+                cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << ne_in_tunnels << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
 
                 graph.print_PMR(adj_lists, states);
 
