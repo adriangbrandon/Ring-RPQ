@@ -227,9 +227,14 @@ int main(int argc, char **argv) {
                 total_time = time_span.count();
                 if(flag_s or flag_o) {
                     auto PMR_info = graph.get_nodes_edges(adj_lists);
-                    auto p = graph.compress_PMR(adj_lists, states);
-
-                    cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << p.first << ";" << p.second << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+                    if(!adj_lists.empty()) {
+                        auto p = graph.compress_PMR(adj_lists, states);
+                        cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << p.first << ";" << p.
+                                second << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+                    } else {
+                        cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << 0 << ";" << 0 <<
+                            ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+                    }
 
                     //graph.print_PMR(adj_lists, states);
                 }
