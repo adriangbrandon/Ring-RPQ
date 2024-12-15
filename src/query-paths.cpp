@@ -225,15 +225,14 @@ int main(int argc, char **argv) {
                 stop = high_resolution_clock::now();
                 time_span = duration_cast<microseconds>(stop - start);
                 total_time = time_span.count();
+                if(!flag_s and !flag_o) {
+                    auto PMR_info = graph.get_nodes_edges(adj_lists);
+                    auto p = graph.compress_PMR(adj_lists, states);
 
-                auto PMR_info = graph.get_nodes_edges(adj_lists);
-                std::cout << "info" << std::endl;
-                auto p = graph.compress_PMR(adj_lists, states);
+                    cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << p.first << ";" << p.second << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
 
-                cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << p.first << ";" << p.second << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
-
-                graph.print_PMR(adj_lists, states);
-
+                    //graph.print_PMR(adj_lists, states);
+                }
             } else skip_flag = false;
         } else {
             cout << q << ";" <<0 << ";" << 0 << ";" << 0 << ";" << 0<< ";" << 0 << std::endl;
