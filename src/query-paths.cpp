@@ -225,7 +225,7 @@ int main(int argc, char **argv) {
                 stop = high_resolution_clock::now();
                 time_span = duration_cast<microseconds>(stop - start);
                 total_time = time_span.count();
-                if(!flag_s and !flag_o) {
+                if(flag_s or flag_o) {
                     auto PMR_info = graph.get_nodes_edges(adj_lists);
                     auto p = graph.compress_PMR(adj_lists, states);
 
