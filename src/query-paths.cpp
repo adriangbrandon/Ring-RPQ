@@ -214,7 +214,7 @@ int main(int argc, char **argv) {
             if (!skip_flag) {
                 start = high_resolution_clock::now();
                 if (!flag_s and !flag_o) {
-                   std::cout << "Not supported yet." << std::endl;
+                    cout << q << ";" <<0 << ";" << 0 << ";" << 0 << ";" << 0<< ";" << 0 << std::endl;
                 } else {
                     if (flag_s) {
                         graph.rpq_path_const_s_to_var_o(query, pred_map, B_array, s_id, adj_lists, states);
@@ -228,15 +228,15 @@ int main(int argc, char **argv) {
 
                 auto PMR_info = graph.get_nodes_edges(adj_lists);
                 std::cout << "info" << std::endl;
-                auto ne_in_tunnels = graph.compress_PMR(adj_lists, states);
+                auto p = graph.compress_PMR(adj_lists, states);
 
-                cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << ne_in_tunnels << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
+                cout << q << ";" << PMR_info.first << ";" << PMR_info.second << ";" << p.first << ";" << p.second << ";" << (uint64_t) (total_time * 1000000000ULL) << endl;
 
                 graph.print_PMR(adj_lists, states);
 
             } else skip_flag = false;
         } else {
-            cout << q << ";0;0" << endl;
+            cout << q << ";" <<0 << ";" << 0 << ";" << 0 << ";" << 0<< ";" << 0 << std::endl;
             skip_flag = false;
         }
     } while (!ifs_q.eof());

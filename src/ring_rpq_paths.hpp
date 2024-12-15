@@ -588,13 +588,13 @@ public:
     }
 
 
-    uint64_t compress_PMR(std::vector<std::vector<edge_type>> &adj_lists,
+   std::pair<uint64_t, uint64_t> compress_PMR(std::vector<std::vector<edge_type>> &adj_lists,
                       std::vector<id_state_degree_type> &states) {
         std::vector<uint32_t> tunnel;
         std::stack<uint32_t> stack_nodes;
         stack_nodes.emplace(0);
         uint32_t n;
-        uint64_t nodes_edges_in_tunnels = 0;
+        uint64_t nodes_edges_in_tunnels = 0, tunnels = 0;
         std::vector<bool> visited(adj_lists.size(), false);
         while(!stack_nodes.empty()) {
             n = stack_nodes.top();
@@ -605,6 +605,7 @@ public:
             }else {
                 if(tunnel.size() > 2) { //we can compress it
                     nodes_edges_in_tunnels += tunnel.size()-1;
+                    ++tunnels;
                 }
                 tunnel.clear();
             }
@@ -614,7 +615,7 @@ public:
                 if(!visited[m.tgt]) stack_nodes.emplace(m.tgt);
             }
         }
-        return nodes_edges_in_tunnels;
+        return {nodes_edges_in_tunnels, tunnels};
     }
 
 void rpq_path_const_s_to_var_o(const std::string &rpq,
