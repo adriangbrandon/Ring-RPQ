@@ -602,7 +602,8 @@ public:
             //check if we can add it to a tunnel
             if(states[n].out_degree <= 1) {
                 tunnel.push_back(n);
-            }else {
+            }
+            if(states[n].out_degree == 0 || states[n].out_degree > 1){ //end of a tunnel
                 if(tunnel.size() > 2) { //we can compress it
                     nodes_edges_in_tunnels += tunnel.size()-1;
                     ++tunnels;
