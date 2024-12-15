@@ -600,7 +600,7 @@ public:
             n = stack_nodes.top();
             stack_nodes.pop();
             //check if we can add it to a tunnel
-            if(states[n].out_degree == 1) {
+            if(states[n].out_degree <= 1) {
                 tunnel.push_back(n);
             }else {
                 if(tunnel.size() > 2) { //we can compress it
