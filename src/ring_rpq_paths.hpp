@@ -411,9 +411,9 @@ private:
             auto aux = new_D;
             std::vector<word_t> nfa_states;
             while (aux) {
-                auto q_id = sdsl::bits::lo(new_D);
+                auto q_id = sdsl::bits::lo(aux);
                 word_t mask = (0x1 << q_id);
-                nfa_states.push_back(q_id);
+                nfa_states.push_back(mask);
                 aux = aux & ~mask;
             }
 
