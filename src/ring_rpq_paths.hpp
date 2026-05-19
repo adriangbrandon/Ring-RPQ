@@ -384,6 +384,55 @@ private:
 
     }
 
+    //aqui é onde teño que desgranar os estados
+    uint64_t next_step_const_to_var_v2(RpqAutomata &A, std::vector<word_t> &B_array,
+                             word_t current_D, uint level, bwt_interval &I_p,
+                             Container &ist_container){
+
+        uint64_t out_degree = 0; //number of nodes in the product graph pointed out by the current node
+        //PART1: Finding predicates from the object whose range in L_p is I_p
+        std::vector<std::pair<uint64_t, std::pair<uint64_t, uint64_t>>> pred_vec;
+        L_P.all_active_p_values_in_range_test<word_t>(I_p.left(), I_p.right(), B_array,
+                                                      current_D, pred_vec);
+
+        std::pair<uint64_t, uint64_t> interval;
+        uint64_t c;
+        word_t new_D;
+        //PART2: For each predicate, the values in L_S are obtained by using a backward step
+        for (uint64_t i = 0; i < pred_vec.size(); i++) {
+            interval = L_P.backward_step_test(I_p.left(), I_p.right(), pred_vec[i].first,
+                                              pred_vec[i].second.first,
+                                              pred_vec[i].second.second);
+            c = L_S.get_C(pred_vec[i].first);
+            std::vector<uint64_t> subj_vec;
+            subj_vec = L_S.all_values_in_range(c + interval.first, c + interval.second);
+            new_D = (word_t) A.next(current_D, pred_vec[i].first, BWD);
+
+            auto aux = new_D;
+            std::vector<word_t> nfa_states;
+            while (aux) {
+                auto q_id = sdsl::bits::lo(new_D);
+                word_t mask = (0x1 << q_id);
+                nfa_states.push_back(q_id);
+                aux = aux & ~mask;
+            }
+
+            //PART3: Map the range of each subject to the range of objects
+            for (const auto &s : subj_vec) {
+                const auto lb = L_P.get_C(s);
+                const auto rb = L_P.get_C(s + 1) - 1;
+                for (auto ns : nfa_states) {
+                    ist_container.push(interval_state_type{bwt_interval(lb, rb), ns, level+1,
+                    static_cast<uint32_t>(s), static_cast<uint32_t>(pred_vec[i].first)});
+                    ++out_degree;
+                }
+
+            }
+        }
+        return out_degree;
+
+    }
+
 
 
     void push_merge_interval(Container& ist_container, uint32_t node, uint32_t label, word_t D, uint level){
@@ -501,6 +550,56 @@ private:
         return false;
     }
 
+    bool traverse_node_v2(RpqAutomata &A,
+                             word_t D, uint level, uint32_t s, uint32_t p,
+                             std::unordered_map<uint64_t, info_type> &map_id,
+                             std::vector<id_state_label_type> &path,
+                             uint64_t &start_path,
+                             std::vector<id_state_degree_type> &states,
+                             std::vector<std::vector<edge_type>> &adj_lists) {
+        auto aux = D;
+        //TODO: penso que en D solo deberia haber un bit activo
+
+        auto id_state = encode(s, D);
+        auto vs = check_visited_node(id_state, map_id);
+        if(!vs) { //not visited node
+            add_visited_node(id_state, map_id);
+            path[level] = id_state_label_type{id_state, p};
+            if (A.atFinal(D, BWD)) {
+                //building path in PMR
+
+                uint64_t tgt, src;
+                if(start_path > 0) {
+                    src =  map_id[path[start_path-1].id_state].node_pmr;
+                }else {
+                    src = add_PMR_node(path[start_path].id_state, map_id, states, adj_lists);
+                    ++start_path;
+                }
+                for(uint64_t pi = start_path; pi <= level; ++pi) {
+                    tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                    add_adj_list(src, tgt, path[pi], adj_lists);
+                    src = tgt;
+                }
+                start_path = level+1;
+            }
+            return true;
+        }
+        if (vs == 2) { //visited node and in PMR
+            //building path in PMR
+            uint64_t src = map_id[path[start_path-1].id_state].node_pmr; //prev materialized node
+            uint64_t tgt;
+            for(uint64_t pi = start_path; pi < level; ++pi) {
+                tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                add_adj_list(src, tgt, path[pi], adj_lists);
+                src = tgt;
+            }
+            tgt = map_id[id_state].node_pmr;
+            add_adj_list(src, tgt, id_state_label_type{id_state, p}, adj_lists);
+            start_path = level+1;
+        } //Otherwise: visited node but not in PMR => No solution is reacheable [nothing to do]*/
+        return false;
+    }
+
 
     bool path_const_s_to_var_o(RpqAutomata &A,
                                std::vector<word_t> &B_array,
@@ -557,6 +656,63 @@ private:
         }
         return false;
     };
+
+     bool path_const_s_to_var_o_v2(RpqAutomata &A,
+                               std::vector<word_t> &B_array,
+                               uint32_t initial_object,
+                               std::vector<std::vector<edge_type>> &adj_lists,
+                               std::vector<id_state_degree_type> &states,
+                               bool const_to_var,
+                               high_resolution_clock::time_point start) {
+
+        high_resolution_clock::time_point stop;
+        double total_time = 0.0;
+        duration<double> time_span;
+
+        word_t current_D;  // palabra de maquina D, con los estados activos (ojo que word_t son 16 bits)
+        //TODO: necesito bitmap inizializable a 0 para cada nodo por agora uso o map_id
+        // tamaño automata = m
+        // tamaño array<64> = (2^m+63) / 64
+        //initializable_array<word_t> D_array(4 * (max_O + 1), 0);
+
+        //TODO: container agora ten que conter intervalo + currentD (e o mesmo) necesitarei saber o object?
+        Container ist_container; //contains intervals with NFA states
+        std::unordered_map<uint64_t, info_type> map_id;
+        current_D = (word_t) A.getFinalStates();// solo hai un activo , asi que non hai problema
+        ist_container.push(interval_state_type{bwt_interval(L_P.get_C(initial_object),
+                                                            L_P.get_C(initial_object + 1) - 1), current_D, 0,
+                                                                initial_object, 0});
+
+        /*auto id_state = encode(initial_object, current_D);
+        add_visited_node(id_state, map_id);
+        if (A.atFinal(current_D, BWD)) {
+            add_PMR_node(id_state, map_id, states, adj_lists);
+        }*/
+        std::vector<id_state_label_type> path(256);
+        //path.emplace_back(id_state_label_type{id_state, 0});
+        uint64_t start_path = 0;
+        while (!ist_container.empty()) {
+            auto ist_top = first_element(ist_container);
+            ist_container.pop();
+            if(ist_top.level+1 == path.size()) path.resize(2*path.size());
+            if(ist_top.level < start_path) start_path = ist_top.level;
+            if(traverse_node(A, ist_top.current_D, ist_top.level, ist_top.node, ist_top.label,
+                map_id, path, start_path, states, adj_lists)) {
+                auto out_degree = next_step_const_to_var_v2(A, B_array,ist_top.current_D, ist_top.level, ist_top.interval, ist_container);
+                set_degree_node(encode(ist_top.node, ist_top.current_D), out_degree, map_id);
+            }
+
+            stop = high_resolution_clock::now();
+            time_span = duration_cast<microseconds>(stop - start);
+            total_time = time_span.count();
+            if (total_time > TIME_OUT) {
+                //std::cout << "Time: " << total_time << std::endl;
+                return true;
+            }
+        }
+        return false;
+    };
+
 
 
 
@@ -683,6 +839,77 @@ void rpq_path_const_s_to_var_o(const std::string &rpq,
         start = high_resolution_clock::now();
 
         path_const_s_to_var_o(A, B_array, initial_object,
+            adj_lists, states, false, start);
+
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.unmark<word_t>(it->first, B_array);
+        }
+    };
+
+    void rpq_path_const_s_to_var_o_v2(const std::string &rpq,
+                              unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
+                              std::vector<word_t> &B_array,
+                              uint64_t initial_object,
+                              std::vector<std::vector<edge_type>> &adj_lists,
+                              std::vector<id_state_degree_type> &states) {
+
+        std::string query, str_aux;
+
+        int64_t iii = rpq.size() - 1;
+        query = parse_reverse(rpq, iii, predicates_map, real_max_P);
+
+        RpqAutomata A(query, predicates_map);
+        if(A.getNumberStates() >= 16) {
+            std::cout << "Error: more than 16 NFA states." << std::endl;
+            return;
+        }
+
+        std::unordered_map<uint64_t, uint64_t> m = A.getB();
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.mark<word_t>(it->first, B_array, (word_t) it->second);
+        }
+
+        high_resolution_clock::time_point start;
+        double total_time = 0.0;
+        duration<double> time_span;
+        start = high_resolution_clock::now();
+
+        path_const_s_to_var_o_v2(A, B_array, initial_object,
+            adj_lists, states, true, start);
+
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.unmark<word_t>(it->first, B_array);
+        }
+    };
+
+    void rpq_path_var_s_to_const_o_v2(const std::string &rpq,
+                              unordered_map<std::string, uint64_t> &predicates_map,  // ToDo: esto debería ser una variable miembro de la clase
+                              std::vector<word_t> &B_array,
+                              uint64_t initial_object,
+                              std::vector<std::vector<edge_type>> &adj_lists,
+                              std::vector<id_state_degree_type> &states) {
+
+        std::string query, str_aux;
+        int64_t iii = 0;
+        query = parse(rpq, iii, predicates_map, real_max_P);
+
+        RpqAutomata A(query, predicates_map);
+        if(A.getNumberStates() >= 16) {
+            std::cout << "Error: more than 16 NFA states." << std::endl;
+            return;
+        }
+
+        std::unordered_map<uint64_t, uint64_t> m = A.getB();
+        for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {
+            L_P.mark<word_t>(it->first, B_array, (word_t) it->second);
+        }
+
+        high_resolution_clock::time_point start;
+        double total_time = 0.0;
+        duration<double> time_span;
+        start = high_resolution_clock::now();
+
+        path_const_s_to_var_o_v2(A, B_array, initial_object,
             adj_lists, states, false, start);
 
         for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++) {

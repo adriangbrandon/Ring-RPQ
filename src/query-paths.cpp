@@ -217,9 +217,9 @@ int main(int argc, char **argv) {
                     cout << q << ";" <<0 << ";" << 0 << ";" << 0 << ";" << 0<< ";" << 0 << std::endl;
                 } else {
                     if (flag_s) {
-                        graph.rpq_path_const_s_to_var_o(query, pred_map, B_array, s_id, adj_lists, states);
+                         graph.rpq_path_const_s_to_var_o_v2(query, pred_map, B_array, s_id, adj_lists, states);
                     } else {
-                        graph.rpq_path_var_s_to_const_o(query, pred_map, B_array, o_id, adj_lists, states);
+                        graph.rpq_path_var_s_to_const_o_v2(query, pred_map, B_array, o_id, adj_lists, states);
                     }
                 }
                 stop = high_resolution_clock::now();
