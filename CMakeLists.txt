@@ -80,6 +80,8 @@ target_link_libraries(queries-prepare sdsl divsufsort divsufsort64 nfa)
 add_executable(query-paths src/query-paths.cpp)
 target_link_libraries(query-paths sdsl divsufsort divsufsort64 nfa)
 
+add_executable(product-graph src/product-graph.cpp)
+target_link_libraries(product-graph sdsl divsufsort divsufsort64 nfa)
 
 add_executable(yago2s-prepare src/utilities/yago2s-prepare.cpp)
 target_link_libraries(yago2s-prepare sdsl divsufsort divsufsort64)
