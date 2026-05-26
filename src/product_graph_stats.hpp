@@ -349,7 +349,7 @@ public:
             }
 
             stop = high_resolution_clock::now();
-            if (duration_cast<microseconds>(stop - start).count() > TIME_OUT) {
+            if (duration_cast<seconds>(stop - start).count() > TIME_OUT) {
                 timed_out = true;
                 break;
             }
