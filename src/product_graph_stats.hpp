@@ -530,9 +530,10 @@ public:
     /** Imprime el grafo producto con estadísticas por stdout. */
     void print(const std::vector<std::vector<pg_edge_type>>& adj_lists,
                const std::vector<pg_node_stats_type>& node_stats) const {
+        uint node; uint8_t state;
         for (uint64_t i = 0; i < adj_lists.size(); i++) {
             const auto& st = node_stats[i];
-            auto [node, state] = decode_pg(st.id_state);
+            std::tie(node, state) = decode_pg(st.id_state);
             cout << "Node " << i
                  << "  (graph_node=" << node << ", nfa_state=" << state << ")"
                  << "  n_sol=" << st.n_solutions
