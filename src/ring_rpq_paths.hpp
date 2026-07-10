@@ -600,6 +600,56 @@ private:
         return false;
     }
 
+    bool traverse_node_k_bif(RpqAutomata &A,
+                             word_t D, uint level, uint32_t s, uint32_t p,
+                             std::unordered_map<uint64_t, info_type> &map_id,
+                             std::vector<id_state_label_type> &path,
+                             uint64_t &start_path,
+                             std::vector<id_state_degree_type> &states,
+                             std::vector<std::vector<edge_type>> &adj_lists) {
+        auto aux = D;
+        //TODO: penso que en D solo deberia haber un bit activo
+
+        auto id_state = encode(s, D);
+        auto vs = check_visited_node(id_state, map_id);
+        if(!vs) { //not visited node
+            add_visited_node(id_state, map_id);
+            path[level] = id_state_label_type{id_state, p};
+            if (A.atFinal(D, BWD)) {
+                //building path in PMR
+
+                uint64_t tgt, src;
+                if(start_path > 0) {
+                    src =  map_id[path[start_path-1].id_state].node_pmr;
+                }else {
+                    src = add_PMR_node(path[start_path].id_state, map_id, states, adj_lists);
+                    ++start_path;
+                }
+                for(uint64_t pi = start_path; pi <= level; ++pi) {
+                    tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                    add_adj_list(src, tgt, path[pi], adj_lists);
+                    src = tgt;
+                }
+                start_path = level+1;
+            }
+            return true;
+        }
+        if (vs == 2) { //visited node and in PMR
+            //building path in PMR
+            uint64_t src = map_id[path[start_path-1].id_state].node_pmr; //prev materialized node
+            uint64_t tgt;
+            for(uint64_t pi = start_path; pi < level; ++pi) {
+                tgt = add_PMR_node(path[pi].id_state, map_id, states, adj_lists);
+                add_adj_list(src, tgt, path[pi], adj_lists);
+                src = tgt;
+            }
+            tgt = map_id[id_state].node_pmr;
+            add_adj_list(src, tgt, id_state_label_type{id_state, p}, adj_lists);
+            start_path = level+1;
+        } //Otherwise: visited node but not in PMR => No solution is reacheable [nothing to do]*/
+        return false;
+    }
+
 
     bool path_const_s_to_var_o(RpqAutomata &A,
                                std::vector<word_t> &B_array,
@@ -759,6 +809,58 @@ public:
             if(states[n].out_degree <= 1) {
                 tunnel.push_back(n);
             }
+            if(states[n].out_degree == 0 || states[n].out_degree > 1){ //end of a tunnel
+                if(tunnel.size() > 2) { //we can compress it
+                    nodes_edges_in_tunnels += tunnel.size()-1;
+                    ++tunnels;
+                }
+                tunnel.clear();
+            }
+            //visit
+            visited[n] = true;
+            for(const auto &m : adj_lists[n]) {
+                if(!visited[m.tgt]) stack_nodes.emplace(m.tgt);
+            }
+        }
+        return {nodes_edges_in_tunnels, tunnels};
+    }
+
+
+    std::pair<uint64_t, uint64_t> compress_PMR_k_bif(std::vector<std::vector<edge_type>> &adj_lists,
+                      std::vector<id_state_degree_type> &states, uint8_t k) {
+        std::vector<uint32_t> tunnel;
+        typedef std::pair<uint32_t, uint8_t> node_nbif; //node and number of bifurcations
+        std::stack<node_nbif> stack_nodes;
+        stack_nodes.emplace(0, 0);
+        uint32_t n;
+        uint8_t nbif;
+        uint64_t nodes_edges_in_tunnels = 0, tunnels = 0;
+        std::vector<bool> visited(adj_lists.size(), false);
+        while(!stack_nodes.empty()) {
+            node_nbif t = stack_nodes.top();
+            stack_nodes.pop();
+            n = t.first; nbif = t.second;
+            //check if we can add it to a tunnel
+            if(states[n].out_degree == 1) {
+                tunnel.push_back(n);
+                nbif = 0;
+            }else {
+                if (states[n].out_degree == 0) {
+                    tunnel.push_back(n);
+                    if (tunnel.size() > 2) { //we can compress it
+                        nodes_edges_in_tunnels += tunnel.size()-1;
+                        ++tunnels;
+                    }
+                }else {
+                    if (nbif < k) {
+                        ++nbif;
+                        tunnel.push_back(n);
+                    }else {
+
+                    }
+                }
+            }
+
             if(states[n].out_degree == 0 || states[n].out_degree > 1){ //end of a tunnel
                 if(tunnel.size() > 2) { //we can compress it
                     nodes_edges_in_tunnels += tunnel.size()-1;
