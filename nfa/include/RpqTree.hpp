@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef RPQ_TREE_INCLUDED
 #define RPQ_TREE_INCLUDED
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>

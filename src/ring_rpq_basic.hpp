@@ -2157,21 +2157,21 @@ public:
 
         i = rpq.size() - 1;
         query2 = parse_reverse(rpq, i, predicates_map, real_max_P);
+        RpqAutomata A2(query2, predicates_map);
+        m = A2.getB();
 
         for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++)
             L_P.mark<word_t>(it->first, B_array, (word_t) it->second);
 
         bool time_out = false;
-        RpqAutomata A2(query2, predicates_map);
-        m = A2.getB();
         if(all){
             uint64_t sigma = (max_O > max_S) ? max_O : max_S;
             for (i = 1; !time_out && i < sigma; i++)
-                time_out = _rpq_const_s_to_var_o(A, predicates_map, B_array, i,
+                time_out = _rpq_const_s_to_var_o(A2, predicates_map, B_array, i,
                                                  output_subjects, true, start);
         }else{
             for (i = 0; !time_out && i < object_vector_1.size(); i++)
-                time_out = _rpq_const_s_to_var_o(A, predicates_map, B_array, object_vector_1[i],
+                time_out = _rpq_const_s_to_var_o(A2, predicates_map, B_array, object_vector_1[i],
                                                  output_subjects, true, start);
         }
 
@@ -2314,6 +2314,7 @@ public:
 
         for (std::unordered_map<uint64_t, uint64_t>::iterator it = m.begin(); it != m.end(); it++)
             L_P.mark<word_t>(it->first, B_array, (word_t) it->second);
+
         if(all){
             uint64_t sigma = (max_O > max_S) ? max_O : max_S;
             for (i = 1; !time_out && i < sigma; i++)
